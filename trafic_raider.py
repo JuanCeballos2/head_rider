@@ -32,10 +32,10 @@ BLANCO = (255, 255, 255)
 NEGRO = (0, 0, 0)
 AZUL = (0, 0, 255)
 ROJO = (255, 0, 0)
+ROJO_OSCURO = (139, 0, 0)
 
-# ---------------------------------------------------------------------------
+
 # Ajustes del control por cabeza (puedes tocarlos para afinar la sensibilidad)
-# ---------------------------------------------------------------------------
 INDICE_CAMARA = 0        # Cambia a 1 si tienes varias cámaras
 ZONA_MUERTA_X = 0.03     # Cuánto puedes mover la cabeza sin que la moto reaccione
 ZONA_MUERTA_Y = 0.025
@@ -44,7 +44,7 @@ RANGO_Y = 0.07
 SUAVIZADO = 0.5          # 0 a 1: más alto = responde más rápido, más bajo = más suave
 MUESTRAS_CALIBRACION = 20
 
-# Modelo de MediaPipe (API nueva). Se descarga automáticamente la primera vez.
+# Modelo de MediaPipe
 MODELO_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
               "face_landmarker/float16/1/face_landmarker.task")
 MODELO_PATH = os.path.join(ASSETS_DIR, 'face_landmarker.task')
@@ -203,6 +203,17 @@ class ControlCabeza:
         dy = self._eje(nariz[1] - centro[1], ZONA_MUERTA_Y, RANGO_Y)
         return dx, dy
 
+    def obtener_superficie_pygame(self, tamano=(340, 220)):
+        """Convierte el último frame de la cámara a una pygame.Surface."""
+        with self.lock:
+            frame = None if self.frame is None else self.frame.copy()
+        if frame is None:
+            return None
+        redimensionado = cv2.resize(frame, tamano)
+        rgb = cv2.cvtColor(redimensionado, cv2.COLOR_BGR2RGB)
+        # pygame.surfarray espera (ancho, alto, canales), por eso se transpone
+        return pygame.surfarray.make_surface(rgb.swapaxes(0, 1))
+
     def mostrar_camara(self):
         """Debe llamarse desde el hilo principal (OpenCV/GUI lo requiere)."""
         with self.lock:
@@ -229,27 +240,21 @@ def precargar_camara():
     def tarea():
         control = ControlCabeza(INDICE_CAMARA)
         if not control.iniciar():
-            print("No se pudo abrir la cámara: se jugará solo con el teclado (WASD / flechas).")
+            print("No se pudo abrir la cámara: se jugará solo con el teclado (WASD).")
         ESTADO['control'] = control
 
     threading.Thread(target=tarea, daemon=True).start()
 
 
-def Manage_keys(teclas, moto, bool=True):
-    if bool:
-        # Control con flechas
-        izq, der, arr, aba = pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN
-    else:
-        # Control con WASD
-        izq, der, arr, aba = pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s
-
-    if teclas[izq] and moto.x > 0:
+def Manage_keys(teclas, moto):
+    """Control de respaldo con WASD para un solo jugador."""
+    if teclas[pygame.K_a] and moto.x > 0:
         moto.x -= moto.velocidad
-    if teclas[der] and moto.x < Ancho - moto.ancho:
+    if teclas[pygame.K_d] and moto.x < Ancho - moto.ancho:
         moto.x += moto.velocidad
-    if teclas[arr] and moto.y > 0:
+    if teclas[pygame.K_w] and moto.y > 0:
         moto.y -= moto.velocidad
-    if teclas[aba] and moto.y < Alto - moto.alto:
+    if teclas[pygame.K_s] and moto.y < Alto - moto.alto:
         moto.y += moto.velocidad
 
     limitar_moto(moto)
@@ -268,33 +273,43 @@ def Manage_head(control, moto):
     limitar_moto(moto)
 
 
+def dibujar_boton(rect, texto, fuente, mouse_pos, color_hover=ROJO_OSCURO, color_normal=(35, 35, 35)):
+    activo = rect.collidepoint(mouse_pos)
+    color = color_hover if activo else color_normal
+    pygame.draw.rect(Ventana, (15, 15, 15), rect.move(3, 3), border_radius=10)
+    pygame.draw.rect(Ventana, color, rect, border_radius=10)
+    pygame.draw.rect(Ventana, BLANCO, rect, 2, border_radius=10)
+    superficie_txt = fuente.render(texto, True, BLANCO)
+    Ventana.blit(superficie_txt, superficie_txt.get_rect(center=rect.center))
+
+
 def mostrar_menu():
+    """Devuelve 'JUGAR', 'INSTRUCCIONES' o 'SALIR'."""
     ruta_assets = ASSETS_DIR
     fondo = pygame.image.load(os.path.join(ruta_assets, 'Fondo.jpg')).convert()
     fondo = pygame.transform.scale(fondo, (Ancho, Alto))
 
     fondo_difuminado = fondo.copy()
     superficie_difuminado = pygame.Surface(fondo.get_size(), pygame.SRCALPHA)
-    superficie_difuminado.fill((0, 0, 0, 100))
+    superficie_difuminado.fill((0, 0, 0, 110))
     fondo_difuminado.blit(superficie_difuminado, (0, 0))
 
-    pygame.mixer.music.load(os.path.join(ruta_assets, 'wait.wav'))
-    pygame.mixer.music.play(-1)
+    if not pygame.mixer.music.get_busy():
+        pygame.mixer.music.load(os.path.join(ruta_assets, 'wait.wav'))
+        pygame.mixer.music.play(-1)
 
-    font_titulo = pygame.font.Font(None, 80)
-    font_opciones = pygame.font.Font(None, 50)
+    font_titulo = pygame.font.Font(None, 76)
+    font_opciones = pygame.font.Font(None, 42)
     font_creadores = pygame.font.Font(None, 20)
 
-    titulo = font_titulo.render("Head Rider", True, (255, 255, 255))
-    sombra_titulo = font_titulo.render("Head Rider", True, (50, 50, 50))
-    texto_1jugador = font_opciones.render("1 Jugador", True, BLANCO)
-    texto_2jugador = font_opciones.render("2 Jugadores", True, BLANCO)
+    titulo = font_titulo.render("Head Rider", True, BLANCO)
+    sombra_titulo = font_titulo.render("Head Rider", True, (40, 40, 40))
     texto_creadores = font_creadores.render(
         "Creado por: Juan Ceballos y Angel Rodriguez", True, BLANCO)
 
-    # Los rects se definen ANTES del bucle (antes se usaban sin existir en el primer frame)
-    rect_1jugador = pygame.Rect(Ancho // 2 - 150, Alto // 2 - 50, 300, 60)
-    rect_2jugador = pygame.Rect(Ancho // 2 - 150, Alto // 2 + 50, 300, 60)
+    rect_iniciar = pygame.Rect(Ancho // 2 - 130, 220, 260, 58)
+    rect_instrucciones = pygame.Rect(Ancho // 2 - 130, 300, 260, 58)
+    rect_salir = pygame.Rect(Ancho // 2 - 130, 380, 260, 58)
 
     superficie_creadores = pygame.Surface((Ancho, 30), pygame.SRCALPHA)
     superficie_creadores.fill((0, 0, 0, 150))
@@ -303,29 +318,25 @@ def mostrar_menu():
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
                 pygame.mixer.music.stop()
-                return None
-            if evento.type == pygame.MOUSEBUTTONDOWN:
-                if rect_1jugador.collidepoint(evento.pos):
-                    return 1
-                elif rect_2jugador.collidepoint(evento.pos):
-                    return 2
+                return "SALIR"
+            if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
+                if rect_iniciar.collidepoint(evento.pos):
+                    return "JUGAR"
+                elif rect_instrucciones.collidepoint(evento.pos):
+                    return "INSTRUCCIONES"
+                elif rect_salir.collidepoint(evento.pos):
+                    pygame.mixer.music.stop()
+                    return "SALIR"
 
         Ventana.blit(fondo_difuminado, (0, 0))
         mouse_pos = pygame.mouse.get_pos()
 
-        color_1jugador = AZUL if rect_1jugador.collidepoint(mouse_pos) else (50, 50, 50)
-        color_2jugador = AZUL if rect_2jugador.collidepoint(mouse_pos) else (50, 50, 50)
+        Ventana.blit(sombra_titulo, (Ancho // 2 - sombra_titulo.get_width() // 2 + 2, 92))
+        Ventana.blit(titulo, (Ancho // 2 - titulo.get_width() // 2, 90))
 
-        pygame.draw.rect(Ventana, (30, 30, 30), rect_1jugador.move(3, 3), border_radius=10)
-        pygame.draw.rect(Ventana, color_1jugador, rect_1jugador, border_radius=10)
-        pygame.draw.rect(Ventana, (30, 30, 30), rect_2jugador.move(3, 3), border_radius=10)
-        pygame.draw.rect(Ventana, color_2jugador, rect_2jugador, border_radius=10)
-
-        Ventana.blit(sombra_titulo, (Ancho // 2 - sombra_titulo.get_width() // 2 + 2, 102))
-        Ventana.blit(titulo, (Ancho // 2 - titulo.get_width() // 2, 100))
-
-        Ventana.blit(texto_1jugador, (Ancho // 2 - texto_1jugador.get_width() // 2, Alto // 2 - 35))
-        Ventana.blit(texto_2jugador, (Ancho // 2 - texto_2jugador.get_width() // 2, Alto // 2 + 65))
+        dibujar_boton(rect_iniciar, "INICIAR", font_opciones, mouse_pos)
+        dibujar_boton(rect_instrucciones, "INSTRUCCIONES", font_opciones, mouse_pos)
+        dibujar_boton(rect_salir, "SALIR", font_opciones, mouse_pos)
 
         Ventana.blit(superficie_creadores, (0, Alto - 30))
         Ventana.blit(texto_creadores, (Ancho // 2 - texto_creadores.get_width() // 2, Alto - 25))
@@ -334,8 +345,81 @@ def mostrar_menu():
         RELOJ.tick(FPS)
 
 
-def mostrar_ganador(jugador, Ancho, Alto, Ventana, BLANCO, AZUL, NEGRO, numero_de_jugadores, puntaje):
-    """Pantalla final. Devuelve True para volver al menú, False si se cierra la ventana."""
+def mostrar_instrucciones():
+    """Muestra las instrucciones de control por nariz y una vista previa de la cámara."""
+    font_titulo = pygame.font.Font(None, 54)
+    font_texto = pygame.font.Font(None, 24)
+    font_boton = pygame.font.Font(None, 36)
+
+    rect_camara = pygame.Rect(30, 175, 340, 220)
+    rect_recalibrar = pygame.Rect(Ancho // 2 - 110, 412, 220, 40)
+    rect_volver = pygame.Rect(Ancho // 2 - 100, 525, 200, 50)
+
+    control = ESTADO['control']
+    if control is not None:
+        control.recalibrar()
+
+    while True:
+        if control is None and ESTADO['control'] is not None:
+            control = ESTADO['control']
+            control.recalibrar()
+
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                pygame.mixer.music.stop()
+                return False
+            if evento.type == pygame.KEYDOWN:
+                if evento.key == pygame.K_c and control is not None:
+                    control.recalibrar()
+                elif evento.key == pygame.K_ESCAPE:
+                    return True
+            if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
+                if rect_recalibrar.collidepoint(evento.pos) and control is not None:
+                    control.recalibrar()
+                elif rect_volver.collidepoint(evento.pos):
+                    return True
+
+        Ventana.fill((18, 18, 24))
+        mouse_pos = pygame.mouse.get_pos()
+
+        titulo = font_titulo.render("INSTRUCCIONES", True, BLANCO)
+        Ventana.blit(titulo, titulo.get_rect(center=(Ancho // 2, 42)))
+
+        lineas = [
+            "Mueve tu NARIZ para guiar la moto (izq/der/arr/aba).",
+            "Pulsa C para recalibrar tu posición neutral.",
+            "Respaldo con teclado: W A S D. ¡Esquiva el tráfico!"
+        ]
+        for idx, linea in enumerate(lineas):
+            color_txt = (255, 90, 90) if idx == 2 else (225, 225, 225)
+            surf_txt = font_texto.render(linea, True, color_txt)
+            Ventana.blit(surf_txt, surf_txt.get_rect(center=(Ancho // 2, 92 + idx * 24)))
+
+        # Área de cámara dentro de la ventana de Pygame
+        pygame.draw.rect(Ventana, (10, 10, 14), rect_camara, border_radius=8)
+        if control is not None and control.disponible:
+            surf_cam = control.obtener_superficie_pygame((rect_camara.width, rect_camara.height))
+            if surf_cam is not None:
+                Ventana.blit(surf_cam, rect_camara.topleft)
+            else:
+                msg = font_texto.render("Iniciando cámara / modelo...", True, BLANCO)
+                Ventana.blit(msg, msg.get_rect(center=rect_camara.center))
+        else:
+            msg = font_texto.render("Cámara no disponible (usa WASD)", True, (255, 100, 100))
+            Ventana.blit(msg, msg.get_rect(center=rect_camara.center))
+
+        pygame.draw.rect(Ventana, BLANCO, rect_camara, 2, border_radius=8)
+
+        dibujar_boton(rect_recalibrar, "RECALIBRAR (C)", font_texto, mouse_pos,
+                      color_hover=(60, 60, 120), color_normal=(35, 35, 55))
+        dibujar_boton(rect_volver, "VOLVER", font_boton, mouse_pos)
+
+        pygame.display.update()
+        RELOJ.tick(FPS)
+
+
+def mostrar_ganador(Ancho, Alto, Ventana, BLANCO, NEGRO, puntaje):
+    """Pantalla final para 1 jugador. Devuelve True para volver al menú, False para salir."""
     ruta_assets = ASSETS_DIR
     pygame.mixer.music.load(os.path.join(ruta_assets, 'dead.wav'))
     pygame.mixer.music.play()
@@ -346,87 +430,68 @@ def mostrar_ganador(jugador, Ancho, Alto, Ventana, BLANCO, AZUL, NEGRO, numero_d
         b = int(max(0, 50 - i * 0.07))
         pygame.draw.line(Ventana, (r, g, b), (0, i), (Ancho, i))
 
-    font_titulo = pygame.font.Font(None, 70)
-    font_subtitulo = pygame.font.Font(None, 50)
-    font_boton = pygame.font.Font(None, 40)
+    font_titulo = pygame.font.Font(None, 68)
+    font_subtitulo = pygame.font.Font(None, 48)
+    font_boton = pygame.font.Font(None, 38)
 
-    if numero_de_jugadores != 1:
-        texto_ganador_linea1 = font_titulo.render("Jugador", True, BLANCO)
-        texto_ganador_linea2 = font_titulo.render(f"{jugador} ha ganado", True, BLANCO)
-    else:
-        texto_ganador_linea1 = font_titulo.render("Juego", True, BLANCO)
-        texto_ganador_linea2 = font_titulo.render("Terminado", True, BLANCO)
-    rect_ganador_linea1 = texto_ganador_linea1.get_rect(center=(Ancho // 2, Alto // 2 - 130))
-    rect_ganador_linea2 = texto_ganador_linea2.get_rect(center=(Ancho // 2, Alto // 2 - 70))
+    texto_linea1 = font_titulo.render("Juego", True, BLANCO)
+    texto_linea2 = font_titulo.render("Terminado", True, BLANCO)
+    rect_linea1 = texto_linea1.get_rect(center=(Ancho // 2, Alto // 2 - 130))
+    rect_linea2 = texto_linea2.get_rect(center=(Ancho // 2, Alto // 2 - 70))
 
-    texto_puntaje = font_subtitulo.render(f"Puntaje: {puntaje}", True, (200, 200, 200))
-    texto_volver_a_jugar = font_boton.render("Volver a jugar", True, BLANCO)
+    texto_puntaje = font_subtitulo.render(f"Puntaje: {puntaje}", True, (220, 220, 220))
+    rect_puntaje = texto_puntaje.get_rect(center=(Ancho // 2, Alto // 2 - 10))
 
-    rect_puntaje = texto_puntaje.get_rect(center=(Ancho // 2, Alto // 2 - 20))
-    rect_volver_a_jugar = pygame.Rect(0, 0, 300, 60)
+    rect_volver_a_jugar = pygame.Rect(0, 0, 280, 58)
     rect_volver_a_jugar.center = (Ancho // 2, Alto // 2 + 100)
 
     while True:
         mouse_pos = pygame.mouse.get_pos()
 
-        Ventana.blit(texto_ganador_linea1, rect_ganador_linea1)
-        Ventana.blit(texto_ganador_linea2, rect_ganador_linea2)
+        Ventana.blit(texto_linea1, rect_linea1)
+        Ventana.blit(texto_linea2, rect_linea2)
         Ventana.blit(texto_puntaje, rect_puntaje)
 
-        color_boton = AZUL if rect_volver_a_jugar.collidepoint(mouse_pos) else (50, 50, 50)
-        pygame.draw.rect(Ventana, (20, 20, 20), rect_volver_a_jugar.move(3, 3), border_radius=10)
-        pygame.draw.rect(Ventana, color_boton, rect_volver_a_jugar, border_radius=10)
-        Ventana.blit(texto_volver_a_jugar,
-                     texto_volver_a_jugar.get_rect(center=rect_volver_a_jugar.center))
+        dibujar_boton(rect_volver_a_jugar, "Volver al menú", font_boton, mouse_pos)
 
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
                 pygame.mixer.music.stop()
                 return False
-            if evento.type == pygame.MOUSEBUTTONDOWN:
+            if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
                 if rect_volver_a_jugar.collidepoint(evento.pos):
                     pygame.mixer.music.stop()
-                    return True  # main() vuelve a mostrar el menú (antes salía el menú dos veces)
+                    return True
 
         pygame.display.update()
         RELOJ.tick(FPS)
 
 
-def detectar_colision(carros, motos):
+def detectar_colision(carros, moto):
     for carro in carros:
-        for moto in motos:
-            if carro.rect.colliderect(moto.rect):
-                return True
+        if carro.rect.colliderect(moto.rect):
+            return True
     return False
 
 
-def iniciar_juego(num_jugadores):
-    """Devuelve True para volver al menú, False para cerrar el programa."""
+def iniciar_juego():
+    """Partida de 1 jugador. Devuelve True para volver al menú, False para cerrar."""
     ruta_assets = ASSETS_DIR
     pygame.mixer.music.load(os.path.join(ruta_assets, 'tokyo_drift.wav'))
     pygame.mixer.music.play(-1)
 
-    Jugadores = []
     Enemigos = []
-
     escenario = Escenario(Ancho, Alto)
     generador_carros = Generador(Ancho, escenario.carriles)
 
     tiempo_inicio = pygame.time.get_ticks()
     font = pygame.font.Font(None, 36)
 
-    moto_1 = Moto(100, 400, ruta_assets, 'blue')
-    Jugadores.append(moto_1)
+    moto = Moto(Ancho // 2 - 20, 420, ruta_assets, 'blue')
 
-    if num_jugadores == 2:
-        moto_2 = Moto(275, 400, ruta_assets, 'red')
-        Jugadores.append(moto_2)
-
-    # Temporizador de cambio de escenario
     tiempo_ultimo_cambio = pygame.time.get_ticks()
     tiempo_entre_cambios = 10000
 
-    # La cámara ya se está cargando (o cargó) en segundo plano desde que abrió el programa
     control = ESTADO['control']
     if control is not None:
         control.recalibrar()
@@ -434,7 +499,7 @@ def iniciar_juego(num_jugadores):
     try:
         while True:
             if control is None and ESTADO['control'] is not None:
-                control = ESTADO['control']  # terminó de cargar durante la partida
+                control = ESTADO['control']
                 control.recalibrar()
 
             tiempo_actual = pygame.time.get_ticks()
@@ -455,14 +520,10 @@ def iniciar_juego(num_jugadores):
 
             teclas = pygame.key.get_pressed()
 
-            # Jugador 1: cabeza (+ WASD como respaldo)
-            Manage_keys(teclas, moto_1, False)
+            # Control por nariz (+ WASD como respaldo)
+            Manage_keys(teclas, moto)
             if control is not None and control.disponible:
-                Manage_head(control, moto_1)
-
-            # Jugador 2: flechas
-            if num_jugadores == 2:
-                Manage_keys(teclas, moto_2)
+                Manage_head(control, moto)
 
             # Cambiar escenario automáticamente
             if tiempo_actual - tiempo_ultimo_cambio > tiempo_entre_cambios:
@@ -473,53 +534,46 @@ def iniciar_juego(num_jugadores):
             escenario.dibujar(Ventana)
             Ventana.blit(texto_tiempo, (10, 10))
 
-            moto_1.dibujar(Ventana)
-            if num_jugadores == 2:
-                moto_2.dibujar(Ventana)
+            moto.dibujar(Ventana)
 
             if tiempo_transcurrido < 10:
                 aumento = 2
             else:
                 aumento = min((tiempo_transcurrido // 10) + 3, 7)
 
-            # Se recorre una copia para poder quitar carros sin romper el bucle
             for enemigo in Enemigos[:]:
                 enemigo.dibujar(Ventana)
                 enemigo.movimiento(aumento)
 
-                if detectar_colision([enemigo], [moto_1]):
+                if detectar_colision([enemigo], moto):
                     pygame.mixer.music.stop()
-                    return mostrar_ganador(2, Ancho, Alto, Ventana, BLANCO, AZUL, NEGRO,
-                                           num_jugadores, tiempo_transcurrido)
-
-                if num_jugadores == 2 and detectar_colision([enemigo], [moto_2]):
-                    pygame.mixer.music.stop()
-                    return mostrar_ganador(1, Ancho, Alto, Ventana, BLANCO, AZUL, NEGRO,
-                                           num_jugadores, tiempo_transcurrido)
+                    return mostrar_ganador(Ancho, Alto, Ventana, BLANCO, NEGRO, tiempo_transcurrido)
 
                 if enemigo.y > Alto:
                     Enemigos.remove(enemigo)
 
             pygame.display.update()
 
-            # Vista previa de la cámara (dentro del bucle y en el hilo principal)
             if control is not None and control.disponible:
                 control.mostrar_camara()
 
             RELOJ.tick(FPS)
     finally:
-        # Solo se cierra la ventana de vista previa; la cámara sigue lista para la próxima partida
         cv2.destroyAllWindows()
 
 
 def main():
-    precargar_camara()  # se carga mientras estás en el menú
+    precargar_camara()
     while True:
-        num_jugadores = mostrar_menu()
-        if num_jugadores is None:
+        opcion = mostrar_menu()
+        if opcion == "SALIR":
             break
-        if not iniciar_juego(num_jugadores):
-            break
+        elif opcion == "INSTRUCCIONES":
+            if not mostrar_instrucciones():
+                break
+        elif opcion == "JUGAR":
+            if not iniciar_juego():
+                break
 
     if ESTADO['control'] is not None:
         ESTADO['control'].cerrar()
