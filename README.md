@@ -8,8 +8,7 @@
 
 ## 1. Menú Principal
 
-![Menú Principal de Head Rider](captura_menu.png)
-
+![Menú Principal de Head Rider](assets/captura_menu.png)
 La ventana principal (`400x600`) presenta el título **Head Rider** sobre un escenario urbano nocturno en *pixel art* con motos en carretera, un pie de página con los créditos y tres botones interactivos con efecto *hover*:
 
 * **INICIAR:** Activa el control por cámara/nariz para la partida, inicia el modo de juego en **1 solo jugador** y cambia la música de espera a la pista de la carrera.
@@ -20,7 +19,7 @@ La ventana principal (`400x600`) presenta el título **Head Rider** sobre un esc
 
 ## 2. Pantalla de Instrucciones y Calibración
 
-![Pantalla de Instrucciones y Cámara](captura_instrucciones.png)
+![Pantalla de Instrucciones y Cámara](assets/captura_instrucciones.png)
 
 Esta vista permite preparar el control facial antes de entrar a la pista:
 
