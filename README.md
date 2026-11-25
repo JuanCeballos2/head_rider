@@ -119,3 +119,20 @@ if detectar_colision([enemigo], moto):
 Si `detectar_colision` retorna `True`, se detiene la música de la partida (`tokyo_drift.wav`) y se invoca `mostrar_ganador(...)` pasando `tiempo_transcurrido` como puntaje final, dando por finalizada la partida.
 
 ---
+
+## 4. Operaciones Matemáticas Clave
+
+El funcionamiento de **Head Rider** utiliza diferentes operaciones matemáticas para procesar el seguimiento facial, controlar el movimiento de la motocicleta y administrar la dificultad progresiva del juego.
+
+- **Suavizado de la nariz:** Se aplica un promedio ponderado entre la lectura actual y la posición anterior (`SUAVIZADO = 0.5`), reduciendo los movimientos bruscos y los temblores durante el seguimiento facial.
+
+- **Calibración y zona muerta:** Se promedian 20 muestras iniciales para determinar el centro neutral de la nariz. Posteriormente, se resta este centro a la posición actual para obtener el desplazamiento. Los movimientos pequeños dentro de la zona muerta se ignoran, mientras que los restantes se normalizan proporcionalmente entre `-1` y `1`.
+
+- **Movimiento y límites:** El desplazamiento de la motocicleta se calcula multiplicando los valores de movimiento (`dx` y `dy`) por la velocidad de la moto. Después, se limitan las coordenadas `x` e `y` para evitar que la motocicleta salga de los límites de la ventana de juego (`400x600`).
+
+- **Puntaje, carriles y dificultad:** El puntaje corresponde al tiempo transcurrido en segundos (`ms // 1000`). El ancho de la ventana se divide entre `3` para establecer los carriles y centrar cada vehículo, aplicando un desplazamiento de `37.5` píxeles. La dificultad aumenta progresivamente mediante las siguientes operaciones:
+  - El intervalo de aparición de los carros disminuye cada 10 segundos, desde `2000` ms hasta un mínimo de `800` ms.
+  - La velocidad adicional del tráfico aumenta cada 15 segundos, hasta alcanzar un incremento de `+1.0`.
+  - El factor `aumento` de velocidad durante la partida escala según el tiempo transcurrido, comenzando en `2` y aumentando progresivamente hasta un máximo de `7`.
+
+---
